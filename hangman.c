@@ -8,12 +8,14 @@
 enum return_codes {
 	SUCCESS = 0,
 	FILE_ERROR = 1,
-	USER_EOF = 2
+	USER_EOF = 2		// EOF sent by user
 };
 
 enum game_defaults {
-	MAX_WORD_LEN = 64,
-	USER_INPUT_BUF = 8
+	MAX_WORD_LEN = 64,	// Maximum word size allowed in the 
+	// word_file
+	USER_INPUT_BUF = 8	// Arbitrary buffer size; doesn't need
+	    // to be longer than 8 chars for input validation
 };
 
 char *generate_default_word_path(void);
@@ -25,7 +27,7 @@ void play_game(char *answer_word);
 int main(int argc, char *argv[])
 {
 	if (argc > 2) {
-		fprintf(stderr, "Usage: %s [wordsfile]", argv[0]);
+		fprintf(stderr, "Usage: %s [wordfile]", argv[0]);
 	}
 	//printf("%zu", strlen(getenv("HOME")));
 
@@ -41,12 +43,14 @@ int main(int argc, char *argv[])
 		word_path = generate_default_word_path();
 	}
 	answer_word = select_word(word_path, default_path_flag);
-	printf("%s\n", answer_word);
-	play_game(answer_word);
-
 	if (default_path_flag) {
 		free(word_path);
 	}
+	// DEVPRINT <!>
+	printf("%s\n", answer_word);
+	// REMOVE BEFORE SUBMISSION
+	play_game(answer_word);
+
 	free(answer_word);
 	return (SUCCESS);
 }
@@ -54,12 +58,15 @@ int main(int argc, char *argv[])
 void play_game(char *answer_word)
 {
 	size_t word_size = strlen(answer_word);
+	// answer_word_state runs parallel to answer_word and is used to
+	// toggle on or off the printing of each character
 	bool *answer_word_state = (bool *)calloc(word_size, sizeof(bool));
-	char user_input[USER_INPUT_BUF] = { '\0' };
-	printf("<> HANGMAN <>\n");
-	size_t wrong_guesses = 0;
 	bool found_answer;
+	char user_input[USER_INPUT_BUF] = { '\0' };
+	char seen_guesses[27] = { '\0' };	// length of Alphabet + '\0'
+	size_t wrong_guesses = 0;
 
+	printf("<!> HANGMAN <!>\n");
 	do {
 		printf("%zu - ", wrong_guesses);
 		for (size_t i = 0; i < word_size; ++i) {
@@ -69,7 +76,8 @@ void play_game(char *answer_word)
 				printf("_");
 			}
 		}
-		printf("\nYour Guess: ");
+		printf(": ");
+
 		fgets(user_input, sizeof(user_input), stdin);
 		if (strlen(user_input) != 2 && !(feof(stdin))) {
 			// Case: User input string longer than one char
@@ -84,27 +92,43 @@ void play_game(char *answer_word)
 		} else if (feof(stdin)) {
 			// Case: User entered Ctrl + D to send EOF
 			printf("\nExiting. . .\n");
+			free(answer_word);
+			free(answer_word_state);
 			exit(USER_EOF);
 		} else {
 			user_input[strlen(user_input) - 1] = '\0';	// \n to \0
-			user_input[0] = tolower(user_input[0]);
-			if (!strchr
-			    ("abcdefghijklmnopqrstuvwxyz", user_input[0])) {
+			char letter = tolower(user_input[0]);
+			if (!isalpha(letter)) {
 				// Case: User input string not in alphabet
 				printf
 				    ("Invalid input. Guess must be one letter.\n");
 			} else {
 				// Case: User input passed validation
-				bool letter_seen = false;
-				for (size_t i = 0; i < word_size; ++i) {
-					if (user_input[0] ==
-					    tolower(*(answer_word + i))) {
-						answer_word_state[i] = true;
-						letter_seen = true;
-					}
-				}
-				if (!letter_seen) {
+				if (strchr(seen_guesses, letter)) {
+					// Case: Duplicate guess
 					++wrong_guesses;
+				} else {
+					seen_guesses[strlen(seen_guesses)] =
+					    letter;
+					if (!strchr(answer_word, letter)
+					    && !strchr(answer_word,
+						       toupper(letter))) {
+						// Case: Letter not in string
+						++wrong_guesses;
+					} else {
+						for (size_t i = 0;
+						     i < word_size; ++i) {
+							if (letter ==
+							    tolower(*
+								    (answer_word
+								     + i))) {
+								// Case: Letter is in word
+								answer_word_state
+								    [i] = true;
+
+							}
+						}
+					}
 				}
 			}
 		}
@@ -127,9 +151,7 @@ void play_game(char *answer_word)
 		printf("\nExiting. . .\n");
 		exit(USER_EOF);
 	}
-
 	free(answer_word_state);
-
 }
 
 char *generate_default_word_path(void)
