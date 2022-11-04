@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +15,7 @@ enum game_defaults {
 };
 
 char *generate_default_word_path(void);
-char *select_word(char *word_path);
+char *select_word(char *word_path, bool default_path_flag);
 int get_linecount(FILE * word_file);
 int validate_word(char *current_word);
 
@@ -27,16 +28,22 @@ int main(int argc, char *argv[])
 	//printf("%zu", strlen(getenv("HOME")));
 
 	char *word_path;
+	char *answer_word;
+	bool default_path_flag = true;
 	if (argc == 2) {
-		//words_file = argv[1];
+		// Case: User passed file path
+		word_path = argv[1];
+		default_path_flag = false;
 	} else {
+		// Case: Default file path
 		word_path = generate_default_word_path();
-		char *answer_word = select_word(word_path);
-
-		printf("%s\n", answer_word);
-		free(answer_word);
-		free(word_path);
 	}
+	answer_word = select_word(word_path, default_path_flag);
+	printf("%s\n", answer_word);
+	// if (default_path_flag) {
+	//     free(word_path);
+	// }
+	// free(answer_word);
 
 	return (SUCCESS);
 }
@@ -52,57 +59,76 @@ char *generate_default_word_path(void)
 	return (word_path);
 }
 
-char *select_word(char *word_path)
-{ 
+char *select_word(char *word_path, bool default_path_flag)
+{
 	// Sourced from Liam Echlin in get_random_lyrics.c
 	FILE *word_file = fopen(word_path, "r");
+
 	if (!word_file) {
+		// Case: File does not exist or is not able to be read
 		perror("Could not open words file");
 		exit(FILE_ERROR);
 	}
 	size_t line_count = get_linecount(word_file);
-
 	char *string_list =
 	    (char *)calloc(line_count, sizeof(char) * MAX_WORD_LEN);
+	size_t validated_line_count = 0;
 	char line_buffer[MAX_WORD_LEN + 2];	// Size of max word length + \n | \0
+
 	for (size_t i = 0; i < line_count; ++i) {
 		// Iterates through file, ignoring duplicate newlines
 		fgets(line_buffer, (MAX_WORD_LEN + 2), word_file);
 		if (line_buffer[0] == '\n') {
-			--i;
+			// Case: Empty line
 			continue;
-		} else if (line_buffer[strlen(line_buffer) - 1] != '\n'
-			   && !feof(word_file)) {
-			// Case: Line too long.
-			char consumer = '\0';
-			while (consumer != '\n' && consumer != EOF) {
-				consumer = getc(word_file);
+		} else if (line_buffer[strlen(line_buffer) - 1] != '\n') {
+			long int current_position = ftell(word_file);	// Store file offset
+			// to seek back to later if necessary
+			if (!
+			    (fgets(line_buffer, (MAX_WORD_LEN + 2), word_file)))
+			{
+				// Case: No newline before EOF
+				goto word_validation;
 			}
-			--line_count;
-			--i;
+			// Case: Line too long
+			fseek(word_file, current_position, 0);	// Seek back to position before 
+			//test
+			int consumer = '\0';
+			while (consumer != '\n' && consumer != EOF) {
+				consumer = fgetc(word_file);
+			}
 			continue;
 		}
-		strncpy(string_list + strlen(string_list), line_buffer,
-			strlen(line_buffer));
+ word_validation:
+		if (!(validate_word(line_buffer))) {
+			continue;
+		} else {
+			++validated_line_count;
+			strncpy(string_list + strlen(string_list), line_buffer,
+				strlen(line_buffer) + 1);
+		}
 	}
-	char **words =
-	    (char **)calloc(line_count, sizeof(char *) * MAX_WORD_LEN);
+	if (validated_line_count == 0) {
+		// Case: No valid words in file.
+		free(string_list);
+		if (default_path_flag) {
+			free(word_path);
+		}
+		fprintf(stderr, "Unable to find valid words in file.\n");
+		exit(FILE_ERROR);
+	}
+
+	char **words = (char **)calloc(validated_line_count,
+				       sizeof(char *) * MAX_WORD_LEN);
 
 	words[0] = strtok(string_list, "\n");
-	for (size_t i = 1; i < line_count; ++i) {
+	for (size_t i = 1; i < validated_line_count; ++i) {
 		words[i] = strtok(NULL, "\n");
 	}
-	for (size_t i = 0; i < line_count; ++i) {
-		if (!(validate_word(words[i]))) {
-			for (size_t x = i; x < line_count; ++x) {
-				words[x] = words[x + 1];
-			}
-			--line_count;
-			--i;
-		}
-	}
+
 	srand(time(NULL));
-	size_t random_index = random() % line_count;
+	size_t random_index = random() % validated_line_count;
+
 	char *selected_word =
 	    (char *)calloc(strlen(words[random_index]) + 1, sizeof(char));
 	strncpy(selected_word, words[random_index],
@@ -120,62 +146,47 @@ int validate_word(char *current_word)
 // Returns 0 if word was invalid, 1 if word was valid.
 {
 	size_t word_size = strlen(current_word);
-	char *lower_current_word =
-	    (char *)calloc(strlen(current_word) + 1, sizeof(char));
+	char *lower_current_word = (char *)calloc(word_size + 1, sizeof(char));
 	for (size_t i = 0; i < word_size; ++i) {
 		lower_current_word[i] = tolower(current_word[i]);
 	}
 	int success_flag = 0;
-
-	for (size_t i = 0; i < word_size; ++i) {
-		if (!
-		    (strspn(lower_current_word, "abcdefghijklmnopqrstuvwxyz") ==
-		     word_size)) {
-			// Case: Word is invalid
-		} else {
-			if (current_word[(word_size) - 1] == '\n') {
-				// Strip newline if present
-				current_word[(word_size) - 1] = '\0';
-			}
-			// Case: word is valid
-			success_flag = 1;
-		}
+	if (lower_current_word[(word_size) - 1] == '\n') {
+		// Strip newline if present
+		lower_current_word[(word_size) - 1] = '\0';
+	}
+	if (!
+	    (strspn(lower_current_word, "abcdefghijklmnopqrstuvwxyz") ==
+	     strlen(lower_current_word))) {
+		// Case: Word is invalid
+	} else {
+		// Case: word is valid
+		success_flag = 1;
 	}
 	free(lower_current_word);
 	return (success_flag);
 }
 
 int get_linecount(FILE * word_file)
-// Gets count of how many lines of content there are 
-// for given file, ignoring duplicate newlines
-// and accounting for an absent newline before EOF.
-// Returns number of lines with content, valid or invalid.
+// Counts total lines in file, accounting for no
+// newline before EOF.
 {
 	size_t line_count = 0;
-	char consumer = fgetc(word_file);
-	if (consumer == EOF) {
-		// Case: File is empty
-		return (line_count);
-	}
-	for (;;) {
-		// Case: File has content
+	int chars_on_current_line = 0;
+	int consumer;
+	//int chars_on_current_line = 0;
+
+	while ((consumer = fgetc(word_file)) != EOF) {
 		if (consumer == '\n') {
 			++line_count;
-			if ((consumer = fgetc(word_file)) == EOF) {
-				break;
-			} else if (consumer == '\n') {
-				while ((consumer = fgetc(word_file)) == '\n') {
-					;
-				}
-				if (consumer == EOF) {
-					break;
-				}
-			}
-		} else if (consumer == EOF) {
-			++line_count;
-			break;
+			chars_on_current_line = 0;
+		} else {
+			++chars_on_current_line;
 		}
-		consumer = fgetc(word_file);
+	}
+	if (chars_on_current_line > 0) {
+		// Case: No newline before EOF
+		++line_count;
 	}
 	// Set pointer to start of file
 	fseek(word_file, 0, SEEK_SET);
