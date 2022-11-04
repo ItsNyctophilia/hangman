@@ -7,17 +7,20 @@
 
 enum return_codes {
 	SUCCESS = 0,
-	FILE_ERROR = 1
+	FILE_ERROR = 1,
+	USER_EOF = 2
 };
 
 enum game_defaults {
-	MAX_WORD_LEN = 64
+	MAX_WORD_LEN = 64,
+	USER_INPUT_BUF = 8
 };
 
 char *generate_default_word_path(void);
 char *select_word(char *word_path, bool default_path_flag);
 int get_linecount(FILE * word_file);
 int validate_word(char *current_word);
+void play_game(char *answer_word);
 
 int main(int argc, char *argv[])
 {
@@ -39,12 +42,60 @@ int main(int argc, char *argv[])
 	}
 	answer_word = select_word(word_path, default_path_flag);
 	printf("%s\n", answer_word);
+	play_game(answer_word);
+
 	if (default_path_flag) {
 		free(word_path);
 	}
 	free(answer_word);
-
 	return (SUCCESS);
+}
+
+void play_game(char *answer_word)
+{
+	size_t word_size = strlen(answer_word);
+	bool *answer_word_state = (bool *)calloc(word_size, sizeof(bool));
+	char user_input[USER_INPUT_BUF] = { '\0' };
+	printf("<> HANGMAN <>\n");
+
+	for (size_t i = 0; i < word_size; ++i) {
+		if (answer_word_state[i]) {
+			printf("%c", *(answer_word + i));
+		} else {
+			printf("_ ");
+		}
+	}
+	printf("\nYour Guess: ");
+	fgets(user_input, sizeof(user_input), stdin);
+	if (strlen(user_input) > 2) {
+		// Case: User input string longer than one char
+		printf("\nInvalid input. Guess must be one letter.\n");
+		if (strlen(user_input) == USER_INPUT_BUF - 1) {
+			// Case: User input string needs to be flused from buffer
+			int consumer;
+			while (consumer != '\n' && consumer != EOF) {
+				consumer = getc(stdin);
+			}
+		}
+	} else if (feof(stdin)) {
+		// Case: User entered Ctrl + D to send EOF
+		printf("\nExiting. . .\n");
+		exit(USER_EOF);
+	} else {
+		user_input[strlen(user_input) - 1] = '\0';	// \n to \0
+		user_input[0] = tolower(user_input[0]);
+		if (!strchr("abcdefghijklmnopqrstuvwxyz", user_input[0])) {
+			// Case: User input string not in alphabet
+			printf("Invalid input. Guess must be one letter.\n");
+		} else {
+			// Case: User input passed validation
+			printf("Passed.\n");
+		}
+
+	}
+
+	free(answer_word_state);
+
 }
 
 char *generate_default_word_path(void)
@@ -66,7 +117,9 @@ char *select_word(char *word_path, bool default_path_flag)
 	if (!word_file) {
 		// Case: File does not exist or is not able to be read
 		perror("Could not open words file");
-		free(word_path);
+		if (default_path_flag) {
+			free(word_path);
+		}
 		exit(FILE_ERROR);
 	}
 
@@ -128,10 +181,8 @@ char *select_word(char *word_path, bool default_path_flag)
 	for (size_t i = 1; i < validated_line_count; ++i) {
 		words[i] = strtok(NULL, "\n");
 	}
-
 	srand(time(NULL));
 	size_t random_index = random() % validated_line_count;
-
 	char *selected_word =
 	    (char *)calloc(strlen(words[random_index]) + 1, sizeof(char));
 	strncpy(selected_word, words[random_index],
