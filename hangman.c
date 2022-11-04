@@ -20,7 +20,6 @@ int get_linecount(FILE * word_file);
 int validate_word(char *current_word);
 
 int main(int argc, char *argv[])
-// TODO: Everything
 {
 	if (argc > 2) {
 		fprintf(stderr, "Usage: %s [wordsfile]", argv[0]);
@@ -40,10 +39,10 @@ int main(int argc, char *argv[])
 	}
 	answer_word = select_word(word_path, default_path_flag);
 	printf("%s\n", answer_word);
-	// if (default_path_flag) {
-	//     free(word_path);
-	// }
-	// free(answer_word);
+	if (default_path_flag) {
+		free(word_path);
+	}
+	free(answer_word);
 
 	return (SUCCESS);
 }
@@ -67,14 +66,15 @@ char *select_word(char *word_path, bool default_path_flag)
 	if (!word_file) {
 		// Case: File does not exist or is not able to be read
 		perror("Could not open words file");
+		free(word_path);
 		exit(FILE_ERROR);
 	}
+
 	size_t line_count = get_linecount(word_file);
 	char *string_list =
 	    (char *)calloc(line_count, sizeof(char) * MAX_WORD_LEN);
 	size_t validated_line_count = 0;
 	char line_buffer[MAX_WORD_LEN + 2];	// Size of max word length + \n | \0
-
 	for (size_t i = 0; i < line_count; ++i) {
 		// Iterates through file, ignoring duplicate newlines
 		fgets(line_buffer, (MAX_WORD_LEN + 2), word_file);
@@ -101,8 +101,10 @@ char *select_word(char *word_path, bool default_path_flag)
 		}
  word_validation:
 		if (!(validate_word(line_buffer))) {
+			// Case: File failed validation
 			continue;
 		} else {
+			// Case: File passed validation
 			++validated_line_count;
 			strncpy(string_list + strlen(string_list), line_buffer,
 				strlen(line_buffer) + 1);
@@ -114,6 +116,7 @@ char *select_word(char *word_path, bool default_path_flag)
 		if (default_path_flag) {
 			free(word_path);
 		}
+		fclose(word_file);
 		fprintf(stderr, "Unable to find valid words in file.\n");
 		exit(FILE_ERROR);
 	}
