@@ -57,41 +57,75 @@ void play_game(char *answer_word)
 	bool *answer_word_state = (bool *)calloc(word_size, sizeof(bool));
 	char user_input[USER_INPUT_BUF] = { '\0' };
 	printf("<> HANGMAN <>\n");
+	size_t wrong_guesses = 0;
+	bool found_answer;
 
-	for (size_t i = 0; i < word_size; ++i) {
-		if (answer_word_state[i]) {
-			printf("%c", *(answer_word + i));
-		} else {
-			printf("_ ");
-		}
-	}
-	printf("\nYour Guess: ");
-	fgets(user_input, sizeof(user_input), stdin);
-	if (strlen(user_input) > 2) {
-		// Case: User input string longer than one char
-		printf("\nInvalid input. Guess must be one letter.\n");
-		if (strlen(user_input) == USER_INPUT_BUF - 1) {
-			// Case: User input string needs to be flused from buffer
-			int consumer;
-			while (consumer != '\n' && consumer != EOF) {
-				consumer = getc(stdin);
+	do {
+		printf("%zu - ", wrong_guesses);
+		for (size_t i = 0; i < word_size; ++i) {
+			if (answer_word_state[i]) {
+				printf("%c", *(answer_word + i));
+			} else {
+				printf("_");
 			}
 		}
-	} else if (feof(stdin)) {
+		printf("\nYour Guess: ");
+		fgets(user_input, sizeof(user_input), stdin);
+		if (strlen(user_input) != 2 && !(feof(stdin))) {
+			// Case: User input string longer than one char
+			printf("\nInvalid input. Guess must be one letter.\n");
+			if (strlen(user_input) == USER_INPUT_BUF - 1) {
+				// Case: User input string needs to be flused from buffer
+				int consumer;
+				while (consumer != '\n' && consumer != EOF) {
+					consumer = getc(stdin);
+				}
+			}
+		} else if (feof(stdin)) {
+			// Case: User entered Ctrl + D to send EOF
+			printf("\nExiting. . .\n");
+			exit(USER_EOF);
+		} else {
+			user_input[strlen(user_input) - 1] = '\0';	// \n to \0
+			user_input[0] = tolower(user_input[0]);
+			if (!strchr
+			    ("abcdefghijklmnopqrstuvwxyz", user_input[0])) {
+				// Case: User input string not in alphabet
+				printf
+				    ("Invalid input. Guess must be one letter.\n");
+			} else {
+				// Case: User input passed validation
+				bool letter_seen = false;
+				for (size_t i = 0; i < word_size; ++i) {
+					if (user_input[0] ==
+					    tolower(*(answer_word + i))) {
+						answer_word_state[i] = true;
+						letter_seen = true;
+					}
+				}
+				if (!letter_seen) {
+					++wrong_guesses;
+				}
+			}
+		}
+		found_answer = true;
+		for (size_t i = 0; i < word_size; ++i) {
+			if (answer_word_state[i] == false) {
+				found_answer = false;
+				break;
+			}
+		}
+	} while ((!found_answer) && (wrong_guesses < 5));
+
+	if (found_answer) {
+		printf("You correctly guessed: %s!\nTotal misses: %zu\n",
+		       answer_word, wrong_guesses);
+	} else if (wrong_guesses == 5) {
+		printf("You lose!\n");
+	} else {
 		// Case: User entered Ctrl + D to send EOF
 		printf("\nExiting. . .\n");
 		exit(USER_EOF);
-	} else {
-		user_input[strlen(user_input) - 1] = '\0';	// \n to \0
-		user_input[0] = tolower(user_input[0]);
-		if (!strchr("abcdefghijklmnopqrstuvwxyz", user_input[0])) {
-			// Case: User input string not in alphabet
-			printf("Invalid input. Guess must be one letter.\n");
-		} else {
-			// Case: User input passed validation
-			printf("Passed.\n");
-		}
-
 	}
 
 	free(answer_word_state);
