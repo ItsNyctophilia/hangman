@@ -32,10 +32,11 @@ char *select_word(char *word_path, bool default_path_flag);
 int get_linecount(FILE * word_file);
 int validate_word(char *current_word);
 void play_game(char *answer_word);
+void generate_save_file(const char *save_string);
 struct save_data *load_save(void);
+char *convert_time(unsigned long seconds_played);
 void save_game(struct save_data *current_game, unsigned long game_score,
 	       unsigned long time_spent);
-char *convert_time(unsigned long seconds_played);
 
 int main(int argc, char *argv[])
 {
@@ -67,7 +68,7 @@ int main(int argc, char *argv[])
 	return (SUCCESS);
 }
 
-void generate_new_save_file(void)
+void generate_new_save_file(const char *save_string)
 // Creates a new file for hangman game save data in
 // $HOME/.hangman.
 {
@@ -81,8 +82,9 @@ void generate_new_save_file(void)
 		free(save_path);
 		exit(FILE_ERROR);
 	}
-	fprintf(new_save_file, "0,0,0,0,0\n");
+	fprintf(new_save_file, "%s", save_string);
 	// Format: total_games,wins,losses,avg_score,seconds_played
+	// Creating new file with default values
 	free(save_path);
 	fclose(new_save_file);
 }
@@ -225,7 +227,7 @@ struct save_data *load_save(void)
 	FILE *save_file = fopen(save_path, "r");
 	if (!save_file) {
 		// Case: File does not exist or is not able to be read
-		generate_new_save_file();
+		generate_new_save_file("0,0,0,0,0\n");
 		return (current_game);
 	} else {
 		// Case: File was able to be read
@@ -235,13 +237,16 @@ struct save_data *load_save(void)
 		int line_count = get_linecount(save_file);
 		fgets(file_buffer, sizeof(file_buffer), save_file);
 		if (line_count != 1
-		    || file_buffer[strlen(file_buffer) - 1] != '\n') {
+		    || file_buffer[strlen(file_buffer) - 1] != '\n' ||
+		    !(strspn(file_buffer, ",1234567890\n\0") ==
+		      strlen(file_buffer))) {
 			// Case: Invalid number of lines or too long of input 
-			printf("Unable to read save data from %s. Overwriting.",
-			       save_path);
+			fprintf(stderr,
+				"Unable to read save data from %s. Overwriting.",
+				save_path);
 			fclose(save_file);
 			free(save_path);
-			generate_new_save_file();
+			generate_new_save_file("0,0,0,0,0\n");
 			return (current_game);
 		}
 		char *fields[5];	// Number of fields in struct save_data
@@ -249,12 +254,14 @@ struct save_data *load_save(void)
 		for (size_t i = 1; i < 5; ++i) {
 			fields[i] = strtok(NULL, ",\n");
 			if (fields[i] == NULL) {
-				printf
-				    ("Unable to read save data from %s. Overwriting.\n",
+				// Case: Missing expected character
+				fprintf
+				    (stderr,
+				     "Unable to read save data from %s. Overwriting.\n",
 				     save_path);
 				fclose(save_file);
 				free(save_path);
-				generate_new_save_file();
+				generate_new_save_file("0,0,0,0,0\n");
 				return (current_game);
 			}
 		}
@@ -262,12 +269,14 @@ struct save_data *load_save(void)
 			char *ptr = NULL;
 			strtoul(fields[i], &ptr, 10);
 			if (fields[i] == ptr) {
-				printf
-				    ("Unable to read save data from %s. Overwriting.\n",
+				// Case: Unable to convert character to unsigned long
+				fprintf
+				    (stderr,
+				     "Unable to read save data from %s. Overwriting.\n",
 				     save_path);
 				fclose(save_file);
 				free(save_path);
-				generate_new_save_file();
+				generate_new_save_file("0,0,0,0,0\n");
 				return (current_game);
 			}
 		}
@@ -327,6 +336,7 @@ void play_game(char *answer_word)
 	printf("Avg Score: %lu // Time spent hanging around: %s\n",
 	       before_game->avg_score, readable_time);
 	free(before_game);
+	free(readable_time);
 	time_t round_time = time(NULL);
 	do {
 		printf("%zu - ", wrong_guesses);
@@ -413,6 +423,7 @@ void play_game(char *answer_word)
 	}
 	struct save_data *after_game = load_save();
 	save_game(after_game, wrong_guesses, (unsigned long)round_time);
+	free(after_game);
 	free(answer_word_state);
 	free(answer_word);
 }
