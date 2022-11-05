@@ -175,6 +175,7 @@ char *select_word(char *word_path, bool default_path_flag)
 
 void save_game(struct save_data *current_game, unsigned long game_score,
 	       unsigned long time_spent)
+// Attempts to save the game
 {
 	char save_string[128] = { '\0' };	// Arbitrary buffer size. The sizes of
 	// The individual fields in this file will never naturally get above this
@@ -195,25 +196,14 @@ void save_game(struct save_data *current_game, unsigned long game_score,
 		 current_game->total_games, current_game->wins,
 		 current_game->losses, current_game->avg_score,
 		 current_game->seconds_played);
-
-	char *save_path = generate_home_path("hangman");
-	FILE *new_save_file = fopen(save_path, "w");
-	if (!new_save_file) {
-		// This should only run if the user for some reason
-		// has a .words file in their $HOME directory.
-		perror("Unable to save game statistics");
-		fclose(new_save_file);
-		free(save_path);
-		exit(FILE_ERROR);
-	}
-	fprintf(new_save_file, "%s", save_string);
-	// Format: total_games,wins,losses,avg_score,seconds_played
-	free(save_path);
-	fclose(new_save_file);
+    generate_new_save_file(save_string);
 
 }
 
 struct save_data *load_save(void)
+// Attempts to load data from the user's $HOME/.hangman file,
+// overwriting it if it was unable to read valid data. Returns
+// struct save_data with game statistics saved as unsigned longs.
 {
 	struct save_data *current_game = malloc(sizeof(*current_game));
 	// Initializing default values for current_game
@@ -228,6 +218,7 @@ struct save_data *load_save(void)
 	if (!save_file) {
 		// Case: File does not exist or is not able to be read
 		generate_new_save_file("0,0,0,0,0\n");
+        free(save_path);
 		return (current_game);
 	} else {
 		// Case: File was able to be read
@@ -310,13 +301,17 @@ char *convert_time(unsigned long seconds_played)
 		minutes -= 60;
 		++hours;
 	}
-	// 10 is the length required to fit HHH:MM:SS + '\0'
+	// 10 is the length required to fit HH:MM:SS + '\0', leaving
+    // an extra digit for hours in the hundreds.
 	char *readable_time = calloc(10, sizeof(char));
-	snprintf(readable_time, 10, "%lu:%lu:%lu", hours, minutes, seconds);
+	snprintf(readable_time, 10, "%02lu:%02lu:%02lu", hours, minutes, seconds);
 	return (readable_time);
 }
 
 void play_game(char *answer_word)
+// Main user-interactive gameplay loop. Takes user-input
+// and validates characters against answer_word parameter
+// until the player either loses or wins, then saves stats.
 {
 	size_t word_size = strlen(answer_word);
 	// answer_word_state runs parallel to answer_word and is used to
@@ -326,9 +321,9 @@ void play_game(char *answer_word)
 	char user_input[USER_INPUT_BUF] = { '\0' };
 	char seen_guesses[27] = { '\0' };	// length of Alphabet + '\0'
 	size_t wrong_guesses = 0;
-
 	struct save_data *before_game = load_save();
 	char *readable_time = convert_time(before_game->seconds_played);
+
 	printf("<!> HANGMAN <!>\n");
 	printf
 	    ("Total games: %lu // Win/Loss: %lu/%lu\n",
@@ -470,7 +465,7 @@ int get_linecount(FILE * word_file)
 // Counts total lines in file, accounting for no
 // newline before EOF. Syntax sourced from
 // https://stackoverflow.com/a/29752374 from
-// pens-fan-69.
+// pens-fan-69. Returns number of lines in file stream.
 {
 	size_t line_count = 0;
 	int chars_on_current_line = 0;
