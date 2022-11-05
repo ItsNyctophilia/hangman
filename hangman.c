@@ -8,7 +8,7 @@
 enum return_codes {
 	SUCCESS = 0,
 	USAGE_ERROR = 1,
-	FILE_ERROR = 2,
+	FILE_ERROR = 2,		// Generic file error
 	USER_EOF = 3		// EOF sent by user
 };
 
@@ -134,10 +134,10 @@ char *select_word(char *word_path, bool default_path_flag)
 		}
  word_validation:
 		if (!(validate_word(line_buffer))) {
-			// Case: File failed validation
+			// Case: line failed validation
 			continue;
 		} else {
-			// Case: File passed validation
+			// Case: line passed validation
 			++validated_line_count;
 			strncpy(string_list + strlen(string_list), line_buffer,
 				strlen(line_buffer) + 1);
@@ -196,7 +196,7 @@ void save_game(struct save_data *current_game, unsigned long game_score,
 		 current_game->total_games, current_game->wins,
 		 current_game->losses, current_game->avg_score,
 		 current_game->seconds_played);
-    generate_new_save_file(save_string);
+	generate_new_save_file(save_string);
 
 }
 
@@ -218,7 +218,7 @@ struct save_data *load_save(void)
 	if (!save_file) {
 		// Case: File does not exist or is not able to be read
 		generate_new_save_file("0,0,0,0,0\n");
-        free(save_path);
+		free(save_path);
 		return (current_game);
 	} else {
 		// Case: File was able to be read
@@ -233,7 +233,7 @@ struct save_data *load_save(void)
 		      strlen(file_buffer))) {
 			// Case: Invalid number of lines or too long of input 
 			fprintf(stderr,
-				"Unable to read save data from %s. Overwriting.",
+				"Unable to read save data from %s. Overwriting.\n",
 				save_path);
 			fclose(save_file);
 			free(save_path);
@@ -244,11 +244,13 @@ struct save_data *load_save(void)
 		fields[0] = strtok(file_buffer, ",");
 		for (size_t i = 1; i < 5; ++i) {
 			fields[i] = strtok(NULL, ",\n");
-			if (fields[i] == NULL) {
-				// Case: Missing expected character
+			if (fields[i] == NULL || strlen(fields[i]) > 5) {
+				// 5 is an arbitrary number, but a number in the hundred
+				// thousands is indicative of cheating.
+				// Case: Missing expected character or file likely modified
 				fprintf
 				    (stderr,
-				     "Unable to read save data from %s. Overwriting.\n",
+				     "Unable to read save data from %s. Overwriting. \n",
 				     save_path);
 				fclose(save_file);
 				free(save_path);
@@ -302,9 +304,10 @@ char *convert_time(unsigned long seconds_played)
 		++hours;
 	}
 	// 10 is the length required to fit HH:MM:SS + '\0', leaving
-    // an extra digit for hours in the hundreds.
+	// an extra digit for hours in the hundreds.
 	char *readable_time = calloc(10, sizeof(char));
-	snprintf(readable_time, 10, "%02lu:%02lu:%02lu", hours, minutes, seconds);
+	snprintf(readable_time, 10, "%02lu:%02lu:%02lu", hours, minutes,
+		 seconds);
 	return (readable_time);
 }
 
@@ -317,6 +320,13 @@ void play_game(char *answer_word)
 	// answer_word_state runs parallel to answer_word and is used to
 	// toggle on or off the printing of each character
 	bool *answer_word_state = calloc(word_size, sizeof(bool));
+	for (size_t i = 0; i < word_size; ++i) {
+		// Pre-display punctuation
+		if (ispunct(answer_word[i])) {
+			answer_word_state[i] = true;
+		}
+	}
+
 	bool found_answer;
 	char user_input[USER_INPUT_BUF] = { '\0' };
 	char seen_guesses[27] = { '\0' };	// length of Alphabet + '\0'
@@ -330,6 +340,7 @@ void play_game(char *answer_word)
 	     before_game->total_games, before_game->wins, before_game->losses);
 	printf("Avg Score: %lu // Time spent hanging around: %s\n",
 	       before_game->avg_score, readable_time);
+
 	free(before_game);
 	free(readable_time);
 	time_t round_time = time(NULL);
@@ -435,29 +446,22 @@ char *generate_home_path(const char *target_file)
 }
 
 int validate_word(char *current_word)
-// Validates word by converting each char to lowercase
-// and comparing it to every alphabetical character.
-// Returns 0 if word was invalid, 1 if word was valid.
+// Validates word in word file by converting each char 
+// to lowercase and comparing it to every alphabetical 
+// character. Returns 0 if word was invalid, 1 if word 
+// was valid.
 {
 	size_t word_size = strlen(current_word);
-	char *lower_current_word = calloc(word_size + 1, sizeof(char));
+	int success_flag = 1;
+
 	for (size_t i = 0; i < word_size; ++i) {
-		lower_current_word[i] = tolower(current_word[i]);
+		if (!(isalpha(current_word[i]) || ispunct(current_word[i])
+		      || current_word[i] == '\n')) {
+			// Case: character is not alphabetical 
+			//or punctuation or newline
+			success_flag = 0;
+		}
 	}
-	int success_flag = 0;
-	if (lower_current_word[(word_size) - 1] == '\n') {
-		// Strip newline if present
-		lower_current_word[(word_size) - 1] = '\0';
-	}
-	if (!
-	    (strspn(lower_current_word, "abcdefghijklmnopqrstuvwxyz") ==
-	     strlen(lower_current_word))) {
-		// Case: Word is invalid
-	} else {
-		// Case: word is valid
-		success_flag = 1;
-	}
-	free(lower_current_word);
 	return (success_flag);
 }
 
