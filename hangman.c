@@ -44,7 +44,6 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Usage: %s [FILE]\n", argv[0]);
 		return (USAGE_ERROR);
 	}
-	// TODO: All malloc/calloc calls must be error-handled.
 	char *word_path;
 	char *answer_word;
 	bool default_path_flag = true;
@@ -60,9 +59,6 @@ int main(int argc, char *argv[])
 	if (default_path_flag) {
 		free(word_path);
 	}
-	// DEVPRINT <!>
-	printf("%s\n", answer_word);
-	// REMOVE BEFORE SUBMISSION
 	play_game(answer_word);
 
 	return (SUCCESS);
