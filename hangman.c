@@ -1,5 +1,5 @@
-#include <stdbool.h>
 #include <ctype.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,8 +7,9 @@
 
 enum return_codes {
 	SUCCESS = 0,
-	FILE_ERROR = 1,
-	USER_EOF = 2		// EOF sent by user
+	USAGE_ERROR = 1,
+	FILE_ERROR = 2,
+	USER_EOF = 3		// EOF sent by user
 };
 
 enum game_defaults {
@@ -18,29 +19,31 @@ enum game_defaults {
 	    // to be longer than 8 chars for input validation
 };
 
-char *generate_default_word_path(void);
+char *generate_home_path(const char *file_name);
 char *select_word(char *word_path, bool default_path_flag);
 int get_linecount(FILE * word_file);
 int validate_word(char *current_word);
 void play_game(char *answer_word);
+void load_save(void);
 
 int main(int argc, char *argv[])
 {
 	if (argc > 2) {
-		fprintf(stderr, "Usage: %s [wordfile]", argv[0]);
+		fprintf(stderr, "Usage: %s [word file]\n", argv[0]);
+		return (USAGE_ERROR);
 	}
-	//printf("%zu", strlen(getenv("HOME")));
+	// TODO: All malloc/calloc calls must be error-handled.
 
 	char *word_path;
 	char *answer_word;
 	bool default_path_flag = true;
 	if (argc == 2) {
-		// Case: User passed file path
+		// Case: user passed file path
 		word_path = argv[1];
 		default_path_flag = false;
 	} else {
-		// Case: Default file path
-		word_path = generate_default_word_path();
+		// Case: default file path
+		word_path = generate_home_path("words");
 	}
 	answer_word = select_word(word_path, default_path_flag);
 	if (default_path_flag) {
@@ -50,9 +53,34 @@ int main(int argc, char *argv[])
 	printf("%s\n", answer_word);
 	// REMOVE BEFORE SUBMISSION
 	play_game(answer_word);
-
-	free(answer_word);
+	load_save();
 	return (SUCCESS);
+}
+
+void load_save(void)
+{
+	char *save_path = generate_home_path("hangman");
+	FILE *save_file = fopen(save_path, "r");
+	if (!save_file) {
+		// Case: File does not exist or is not able to be read
+		FILE *new_save_file = fopen(save_path, "w");
+		if (!new_save_file) {
+			// This should only run if the user for some reason
+			// has a .words file in their $HOME directory.
+			perror("Unable to save game statistics");
+			fclose(new_save_file);
+			exit(FILE_ERROR);
+		}
+		fprintf(new_save_file, "0,0,0,0,00:00:00");
+		//total_games,wins,losses,avg_score,HH:MM:SS
+		fclose(new_save_file);
+
+	} else {
+		fclose(save_file);
+	}
+	free(save_path);
+	printf("Here.");
+	return;
 }
 
 void play_game(char *answer_word)
@@ -80,17 +108,19 @@ void play_game(char *answer_word)
 
 		fgets(user_input, sizeof(user_input), stdin);
 		if (strlen(user_input) != 2 && !(feof(stdin))) {
-			// Case: User input string longer than one char
-			printf("\nInvalid input. Guess must be one letter.\n");
+			// Case: user input string longer than one char or
+			// is newline character
+			printf("Invalid input. Guess must be one letter.\n");
 			if (strlen(user_input) == USER_INPUT_BUF - 1) {
-				// Case: User input string needs to be flused from buffer
-				int consumer;
+				// Case: user input string needs 
+				//to be flushed from buffer
+				int consumer = '\0';
 				while (consumer != '\n' && consumer != EOF) {
 					consumer = getc(stdin);
 				}
 			}
 		} else if (feof(stdin)) {
-			// Case: User entered Ctrl + D to send EOF
+			// Case: user entered Ctrl + D to send EOF
 			printf("\nExiting. . .\n");
 			free(answer_word);
 			free(answer_word_state);
@@ -99,13 +129,14 @@ void play_game(char *answer_word)
 			user_input[strlen(user_input) - 1] = '\0';	// \n to \0
 			char letter = tolower(user_input[0]);
 			if (!isalpha(letter)) {
-				// Case: User input string not in alphabet
+				// Case: user input not in alphabet
 				printf
 				    ("Invalid input. Guess must be one letter.\n");
 			} else {
-				// Case: User input passed validation
+				// Case: user input passed validation
 				if (strchr(seen_guesses, letter)) {
-					// Case: Duplicate guess
+					// Case: duplicate guess
+					printf("You already guessed that!\n");
 					++wrong_guesses;
 				} else {
 					seen_guesses[strlen(seen_guesses)] =
@@ -113,7 +144,7 @@ void play_game(char *answer_word)
 					if (!strchr(answer_word, letter)
 					    && !strchr(answer_word,
 						       toupper(letter))) {
-						// Case: Letter not in string
+						// Case: letter not in string
 						++wrong_guesses;
 					} else {
 						for (size_t i = 0;
@@ -122,7 +153,7 @@ void play_game(char *answer_word)
 							    tolower(*
 								    (answer_word
 								     + i))) {
-								// Case: Letter is in word
+								// Case: letter is in word
 								answer_word_state
 								    [i] = true;
 
@@ -146,44 +177,42 @@ void play_game(char *answer_word)
 		       answer_word, wrong_guesses);
 	} else if (wrong_guesses == 5) {
 		printf("You lose!\n");
-	} else {
-		// Case: User entered Ctrl + D to send EOF
-		printf("\nExiting. . .\n");
-		exit(USER_EOF);
 	}
 	free(answer_word_state);
+	free(answer_word);
 }
 
-char *generate_default_word_path(void)
-// Returns a string for the default word path for the current user.
+char *generate_home_path(const char *target_file)
+// Returns a string to target_file in current user's $HOME.
 // Returned string must be freed after use.
 {
-	size_t path_length = (strlen(getenv("HOME")) + 8);	// Length of path required for 
-	// $HOME + "/.words" + NULL byte
+	size_t path_length = (strlen(getenv("HOME")) + strlen(target_file) + 3);
+	// Length of path required for $HOME + /. + [NAME] + NULL byte
 	char *word_path = (char *)malloc(sizeof(char) * path_length);
-	snprintf(word_path, path_length, "%s/.words", getenv("HOME"));
+	snprintf(word_path, path_length, "%s/.%s", getenv("HOME"), target_file);
 	return (word_path);
 }
 
 char *select_word(char *word_path, bool default_path_flag)
+// Uses word_path as file path to read in and valid lines from
+// file, then selects one at random. Returns a pointer to a string
+// that must be freed after use.
 {
 	// Sourced from Liam Echlin in get_random_lyrics.c
 	FILE *word_file = fopen(word_path, "r");
-
 	if (!word_file) {
 		// Case: File does not exist or is not able to be read
-		perror("Could not open words file");
+		perror("Could not open word file");
 		if (default_path_flag) {
 			free(word_path);
 		}
 		exit(FILE_ERROR);
 	}
-
 	size_t line_count = get_linecount(word_file);
 	char *string_list =
 	    (char *)calloc(line_count, sizeof(char) * MAX_WORD_LEN);
 	size_t validated_line_count = 0;
-	char line_buffer[MAX_WORD_LEN + 2];	// Size of max word length + \n | \0
+	char line_buffer[MAX_WORD_LEN + 2];	// Size of max word length + \n + \0
 	for (size_t i = 0; i < line_count; ++i) {
 		// Iterates through file, ignoring duplicate newlines
 		fgets(line_buffer, (MAX_WORD_LEN + 2), word_file);
@@ -191,8 +220,8 @@ char *select_word(char *word_path, bool default_path_flag)
 			// Case: Empty line
 			continue;
 		} else if (line_buffer[strlen(line_buffer) - 1] != '\n') {
-			long int current_position = ftell(word_file);	// Store file offset
-			// to seek back to later if necessary
+			long int current_position = ftell(word_file);	// Store file 
+			//offset to seek back to later if necessary
 			if (!
 			    (fgets(line_buffer, (MAX_WORD_LEN + 2), word_file)))
 			{
@@ -200,8 +229,8 @@ char *select_word(char *word_path, bool default_path_flag)
 				goto word_validation;
 			}
 			// Case: Line too long
-			fseek(word_file, current_position, 0);	// Seek back to position before 
-			//test
+			fseek(word_file, current_position, 0);	// Seek back to
+			//position before test
 			int consumer = '\0';
 			while (consumer != '\n' && consumer != EOF) {
 				consumer = fgetc(word_file);
@@ -243,7 +272,6 @@ char *select_word(char *word_path, bool default_path_flag)
 	    (char *)calloc(strlen(words[random_index]) + 1, sizeof(char));
 	strncpy(selected_word, words[random_index],
 		strlen(words[random_index]));
-	// Free all allocated memory
 	free(string_list);
 	free(words);
 	fclose(word_file);
@@ -279,7 +307,9 @@ int validate_word(char *current_word)
 
 int get_linecount(FILE * word_file)
 // Counts total lines in file, accounting for no
-// newline before EOF.
+// newline before EOF. Syntax sourced from
+// https://stackoverflow.com/a/29752374 from
+// pens-fan-69.
 {
 	size_t line_count = 0;
 	int chars_on_current_line = 0;
@@ -298,7 +328,7 @@ int get_linecount(FILE * word_file)
 		// Case: No newline before EOF
 		++line_count;
 	}
-	// Set pointer to start of file
+	// Set stream to start of file
 	fseek(word_file, 0, SEEK_SET);
 	return (line_count);
 }
