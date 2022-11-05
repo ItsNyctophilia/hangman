@@ -41,7 +41,7 @@ void save_game(struct save_data *current_game, unsigned long game_score,
 int main(int argc, char *argv[])
 {
 	if (argc > 2) {
-		fprintf(stderr, "Usage: %s [word file]\n", argv[0]);
+		fprintf(stderr, "Usage: %s [FILE]\n", argv[0]);
 		return (USAGE_ERROR);
 	}
 	// TODO: All malloc/calloc calls must be error-handled.
@@ -175,7 +175,10 @@ char *select_word(char *word_path, bool default_path_flag)
 
 void save_game(struct save_data *current_game, unsigned long game_score,
 	       unsigned long time_spent)
-// Attempts to save the game
+// Attempts to save the game by updating the save_data struct 
+// elements with new values from the current game, then
+// crafting a formatted string and passing it to
+// generate_new_save_file for what to fill the contents with.
 {
 	char save_string[128] = { '\0' };	// Arbitrary buffer size. The sizes of
 	// The individual fields in this file will never naturally get above this
