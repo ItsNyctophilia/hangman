@@ -60,8 +60,7 @@ int main(int argc, char *argv[])
 	printf("%s\n", answer_word);
 	// REMOVE BEFORE SUBMISSION
 	play_game(answer_word);
-	struct save_data *current_game = load_save();
-	free(current_game);
+
 	return (SUCCESS);
 }
 
@@ -123,7 +122,27 @@ struct save_data *load_save(void)
 		for (size_t i = 1; i < 5; ++i) {
 			fields[i] = strtok(NULL, ",\n");
 		}
-
+		for (size_t i = 0; i < 5; ++i) {
+			char *ptr = NULL;
+			strtoul(fields[i], &ptr, 10);
+			if (fields[i] == ptr) {
+				printf
+				    ("Unable to read save data from %s. Overwriting.\n",
+				     save_path);
+				fclose(save_file);
+				free(save_path);
+				generate_new_save_file();
+				return (current_game);
+			}
+		}
+		// This is ugly and inefficient,
+		// but I honestly cannot think of the syntax 
+		// for how to write this better at 2 AM.
+		current_game->total_games = strtoul(fields[0], NULL, 10);
+		current_game->wins = strtoul(fields[1], NULL, 10);
+		current_game->losses = strtoul(fields[2], NULL, 10);
+		current_game->avg_score = strtoul(fields[3], NULL, 10);
+		current_game->seconds_played = strtoul(fields[4], NULL, 10);
 		fclose(save_file);
 	}
 	free(save_path);
@@ -141,7 +160,15 @@ void play_game(char *answer_word)
 	char seen_guesses[27] = { '\0' };	// length of Alphabet + '\0'
 	size_t wrong_guesses = 0;
 
+	struct save_data *current_game = load_save();
 	printf("<!> HANGMAN <!>\n");
+	printf
+	    ("Total games: %lu // Win/Loss: %lu/%lu\n",
+	     current_game->total_games, current_game->wins,
+	     current_game->losses);
+	printf("Avg Score: %lu // Time spent hanging around: %lu\n",
+	       current_game->avg_score, current_game->seconds_played);
+	free(current_game);
 	do {
 		printf("%zu - ", wrong_guesses);
 		for (size_t i = 0; i < word_size; ++i) {
