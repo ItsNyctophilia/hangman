@@ -24,7 +24,15 @@ char *select_word(char *word_path, bool default_path_flag);
 int get_linecount(FILE * word_file);
 int validate_word(char *current_word);
 void play_game(char *answer_word);
-void load_save(void);
+struct save_data *load_save(void);
+
+struct save_data {
+	unsigned long int total_games;
+	unsigned long int wins;
+	unsigned long int losses;
+	unsigned long int avg_score;
+	unsigned long int seconds_played;
+};
 
 int main(int argc, char *argv[])
 {
@@ -33,7 +41,6 @@ int main(int argc, char *argv[])
 		return (USAGE_ERROR);
 	}
 	// TODO: All malloc/calloc calls must be error-handled.
-
 	char *word_path;
 	char *answer_word;
 	bool default_path_flag = true;
@@ -53,34 +60,74 @@ int main(int argc, char *argv[])
 	printf("%s\n", answer_word);
 	// REMOVE BEFORE SUBMISSION
 	play_game(answer_word);
-	load_save();
+	struct save_data *current_game = load_save();
+	free(current_game);
 	return (SUCCESS);
 }
 
-void load_save(void)
+void generate_new_save_file(void)
+// Creates a new file for hangman game save data in
+// $HOME/.hangman.
 {
+	char *save_path = generate_home_path("hangman");
+	FILE *new_save_file = fopen(save_path, "w");
+	if (!new_save_file) {
+		// This should only run if the user for some reason
+		// has a .words file in their $HOME directory.
+		perror("Unable to save game statistics");
+		fclose(new_save_file);
+		free(save_path);
+		exit(FILE_ERROR);
+	}
+	fprintf(new_save_file, "0,0,0,0,0\n");
+	// Format: total_games,wins,losses,avg_score,seconds_played
+	free(save_path);
+	fclose(new_save_file);
+}
+
+struct save_data *load_save(void)
+{
+	struct save_data *current_game = malloc(sizeof(*current_game));
+	// Initializing default values for current_game
+	current_game->total_games = 0;
+	current_game->wins = 0;
+	current_game->losses = 0;
+	current_game->avg_score = 0;
+	current_game->seconds_played = 0;
+
 	char *save_path = generate_home_path("hangman");
 	FILE *save_file = fopen(save_path, "r");
 	if (!save_file) {
 		// Case: File does not exist or is not able to be read
-		FILE *new_save_file = fopen(save_path, "w");
-		if (!new_save_file) {
-			// This should only run if the user for some reason
-			// has a .words file in their $HOME directory.
-			perror("Unable to save game statistics");
-			fclose(new_save_file);
-			exit(FILE_ERROR);
-		}
-		fprintf(new_save_file, "0,0,0,0,00:00:00");
-		//total_games,wins,losses,avg_score,HH:MM:SS
-		fclose(new_save_file);
-
+		generate_new_save_file();
+		return (current_game);
 	} else {
+		// Case: File was able to be read
+		char file_buffer[128] = { '\0' };
+		// Arbitrary number that should be enough to hold
+		// typical save data for hangman in one call of fgets
+		int line_count = get_linecount(save_file);
+		fgets(file_buffer, sizeof(file_buffer), save_file);
+		if (line_count != 1
+		    || file_buffer[strlen(file_buffer) - 1] != '\n') {
+			// Case: Invalid number of lines or too long of input 
+			printf("Unable to read save data from %s. Overwriting.",
+			       save_path);
+			fclose(save_file);
+			free(save_path);
+			generate_new_save_file();
+			return (current_game);
+		}
+		char *fields[5];	// Number of fields in struct save_data
+		fields[0] = strtok(file_buffer, ",");
+		for (size_t i = 1; i < 5; ++i) {
+			fields[i] = strtok(NULL, ",\n");
+		}
+
 		fclose(save_file);
 	}
 	free(save_path);
-	printf("Here.");
-	return;
+	return (current_game);
 }
 
 void play_game(char *answer_word)
@@ -88,7 +135,7 @@ void play_game(char *answer_word)
 	size_t word_size = strlen(answer_word);
 	// answer_word_state runs parallel to answer_word and is used to
 	// toggle on or off the printing of each character
-	bool *answer_word_state = (bool *)calloc(word_size, sizeof(bool));
+	bool *answer_word_state = calloc(word_size, sizeof(bool));
 	bool found_answer;
 	char user_input[USER_INPUT_BUF] = { '\0' };
 	char seen_guesses[27] = { '\0' };	// length of Alphabet + '\0'
@@ -188,7 +235,7 @@ char *generate_home_path(const char *target_file)
 {
 	size_t path_length = (strlen(getenv("HOME")) + strlen(target_file) + 3);
 	// Length of path required for $HOME + /. + [NAME] + NULL byte
-	char *word_path = (char *)malloc(sizeof(char) * path_length);
+	char *word_path = malloc(sizeof(char) * path_length);
 	snprintf(word_path, path_length, "%s/.%s", getenv("HOME"), target_file);
 	return (word_path);
 }
@@ -209,8 +256,7 @@ char *select_word(char *word_path, bool default_path_flag)
 		exit(FILE_ERROR);
 	}
 	size_t line_count = get_linecount(word_file);
-	char *string_list =
-	    (char *)calloc(line_count, sizeof(char) * MAX_WORD_LEN);
+	char *string_list = calloc(line_count, sizeof(char) * MAX_WORD_LEN);
 	size_t validated_line_count = 0;
 	char line_buffer[MAX_WORD_LEN + 2];	// Size of max word length + \n + \0
 	for (size_t i = 0; i < line_count; ++i) {
@@ -259,8 +305,8 @@ char *select_word(char *word_path, bool default_path_flag)
 		exit(FILE_ERROR);
 	}
 
-	char **words = (char **)calloc(validated_line_count,
-				       sizeof(char *) * MAX_WORD_LEN);
+	char **words = calloc(validated_line_count,
+			      sizeof(char *) * MAX_WORD_LEN);
 
 	words[0] = strtok(string_list, "\n");
 	for (size_t i = 1; i < validated_line_count; ++i) {
@@ -284,7 +330,7 @@ int validate_word(char *current_word)
 // Returns 0 if word was invalid, 1 if word was valid.
 {
 	size_t word_size = strlen(current_word);
-	char *lower_current_word = (char *)calloc(word_size + 1, sizeof(char));
+	char *lower_current_word = calloc(word_size + 1, sizeof(char));
 	for (size_t i = 0; i < word_size; ++i) {
 		lower_current_word[i] = tolower(current_word[i]);
 	}
